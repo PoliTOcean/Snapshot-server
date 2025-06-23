@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Snapshot Server</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1, h2 { color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .button-group button { margin: 5px; padding: 10px 15px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        .button-group button:hover { background-color: #0056b3; }
+        .button-group button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .snapshot-display { margin-top: 20px; }
+        .snapshot-item { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; background-color: #f9f9f9; }
+        .snapshot-item img { max-width: 100%; height: auto; display: block; margin-top: 10px; border-radius: 4px; }
+        .snapshot-item p { margin: 5px 0; }
+        .status-message { padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .status-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #loadingIndicator { display: none; font-weight: bold; color: #007bff; }
+        nav { margin-bottom: 20px; }
+        nav a { text-decoration: none; padding: 8px 15px; background-color: #6c757d; color: white; border-radius: 4px; margin-right: 10px;}
+        nav a:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Camera Snapshot Control</h1>
+        <nav>
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('settings_page') }}">Settings</a>
+        </nav>
+
+        <div class="button-group" id="cameraButtons">
+            <p>Loading camera controls...</p>
+        </div>
+        <div id="loadingIndicator">Processing... Please wait.</div>
+        
+        <h2>Snapshots</h2>
+        <div id="snapshotDisplay" class="snapshot-display">
+            <p>Snapshots will appear here.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const cameraButtonsDiv = document.getElementById('cameraButtons');
+            const snapshotDisplayDiv = document.getElementById('snapshotDisplay');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            let cameras = [];
+
+            function setLoading(isLoading) {
+                loadingIndicator.style.display = isLoading ? 'block' : 'none';
+                document.querySelectorAll('.button-group button').forEach(button => {
+                    button.disabled = isLoading;
+                });
+            }
+
+            function displayResult(resultData, cameraNameOverride = null) {
+                const itemDiv = document.createElement('div');
+                itemDiv.classList.add('snapshot-item');
+                
+                const cameraName = cameraNameOverride || resultData.camera_name || 'N/A';
+
+                if (resultData.success) {
+                    itemDiv.innerHTML = `
+                        <p><strong>Camera:</strong> ${cameraName}</p>
+                        <p class="status-message status-success">Snapshot successful: ${resultData.filename}</p>
+                        <img src="${resultData.image_url}" alt="Snapshot from ${cameraName}">
+                        <a href="${resultData.download_url}" download="${resultData.filename}">Download ${resultData.filename}</a>
+                    `;
+                    // Trigger download automatically
+                    const a = document.createElement('a');
+                    a.href = resultData.download_url;
+                    a.download = resultData.filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } else {
+                    itemDiv.innerHTML = `
+                        <p><strong>Camera:</strong> ${cameraName}</p>
+                        <p class="status-message status-error">Error: ${resultData.error || 'Unknown error'}</p>
+                    `;
+                }
+                // Prepend to show newest first
+                if (snapshotDisplayDiv.firstChild && snapshotDisplayDiv.firstChild.nodeName === "P") {
+                    snapshotDisplayDiv.innerHTML = ''; // Clear initial "Snapshots will appear here."
+                }
+                snapshotDisplayDiv.prepend(itemDiv);
+            }
+
+            async function takeSnapshot(url, cameraName = null) {
+                setLoading(true);
+                try {
+                    const response = await fetch(url, { method: 'POST' });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    
+                    if (data.results) { // For /all or /stereo
+                        data.results.forEach(result => displayResult(result));
+                    } else { // For single camera
+                        displayResult(data, cameraName);
+                    }
+
+                } catch (error) {
+                    console.error('Snapshot request failed:', error);
+                    displayResult({ success: false, error: error.message }, cameraName || 'Operation');
+                } finally {
+                    setLoading(false);
+                }
+            }
+
+            fetch("{{ url_for('api_get_cameras') }}")
+                .then(response => response.json())
+                .then(data => {
+                    cameras = data;
+                    cameraButtonsDiv.innerHTML = ''; // Clear loading message
+
+                    if (cameras.length === 0) {
+                        cameraButtonsDiv.innerHTML = '<p>No cameras configured. Please go to <a href="{{ url_for("settings_page") }}">Settings</a> to add cameras.</p>';
+                        return;
+                    }
+
+                    cameras.forEach(camera => {
+                        const button = document.createElement('button');
+                        button.textContent = `Snapshot ${camera.name}`;
+                        button.onclick = () => takeSnapshot(`{{ url_for('ui_snapshot_camera', camera_name='__CAM_NAME__') }}`.replace('__CAM_NAME__', camera.name), camera.name);
+                        cameraButtonsDiv.appendChild(button);
+                    });
+
+                    const allButton = document.createElement('button');
+                    allButton.textContent = 'Snapshot All Cameras';
+                    allButton.onclick = () => takeSnapshot("{{ url_for('ui_snapshot_all') }}");
+                    cameraButtonsDiv.appendChild(allButton);
+
+                    if (cameras.some(cam => cam.stereo)) {
+                        const stereoButton = document.createElement('button');
+                        stereoButton.textContent = 'Snapshot Stereo Cameras';
+                        stereoButton.onclick = () => takeSnapshot("{{ url_for('ui_snapshot_stereo') }}");
+                        cameraButtonsDiv.appendChild(stereoButton);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching camera list:', error);
+                    cameraButtonsDiv.innerHTML = '<p class="status-message status-error">Error loading camera configurations. Check server logs.</p>';
+                });
+        });
+    </script>
+</body>
+</html>

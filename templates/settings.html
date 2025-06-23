@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Settings</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f0f0f0; }
+        form div { margin-bottom: 10px; }
+        label { display: inline-block; width: 150px; font-weight: bold; }
+        input[type="text"], input[type="number"], select { width: 250px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        input[type="checkbox"] { margin-left: 0; width: auto; }
+        button[type="submit"], .delete-button { padding: 10px 15px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        button[type="submit"]:hover, .delete-button:hover { background-color: #0056b3; }
+        .delete-button { background-color: #dc3545; }
+        .delete-button:hover { background-color: #c82333; }
+        .flash-messages { list-style-type: none; padding: 0; margin-bottom: 15px; }
+        .flash-messages li { padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .flash-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        nav { margin-bottom: 20px; }
+        nav a { text-decoration: none; padding: 8px 15px; background-color: #6c757d; color: white; border-radius: 4px; margin-right: 10px;}
+        nav a:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Camera Settings</h1>
+        <nav>
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('settings_page') }}">Settings</a>
+        </nav>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="flash-{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <h2>Add New Camera</h2>
+        <form action="{{ url_for('add_camera') }}" method="POST">
+            <div>
+                <label for="name">Name:</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div>
+                <label for="device_path">Device Path:</label>
+                <input type="text" id="device_path" name="device_path" placeholder="/dev/video0" required>
+            </div>
+            <div>
+                <label for="type">Type:</label>
+                <select id="type" name="type" onchange="toggleServiceNameField()">
+                    <option value="direct">Direct</option>
+                    <option value="stream_interrupt">Stream Interrupt</option>
+                </select>
+            </div>
+            <div id="serviceNameField" style="display:none;">
+                <label for="service_name">Service Name:</label>
+                <input type="text" id="service_name" name="service_name" placeholder="e.g., camera_stream_main">
+                <small>Required if type is 'Stream Interrupt'. E.g., if camera is 'main', service might be 'camera_stream_main'.</small>
+            </div>
+            <div>
+                <label for="width">Width:</label>
+                <input type="number" id="width" name="width" value="1920" required>
+            </div>
+            <div>
+                <label for="height">Height:</label>
+                <input type="number" id="height" name="height" value="1080" required>
+            </div>
+            <div>
+                <label for="pixel_format">Pixel Format:</label>
+                <input type="text" id="pixel_format" name="pixel_format" value="MJPG" placeholder="e.g., MJPG, YUYV" required>
+            </div>
+            <div>
+                <label for="stereo">Stereo Camera:</label>
+                <input type="checkbox" id="stereo" name="stereo">
+            </div>
+            <div>
+                <label for="roll_offset">Roll Offset (degrees):</label>
+                <input type="number" step="any" id="roll_offset" name="roll_offset" value="0.0">
+            </div>
+            <div>
+                <label for="pitch_offset">Pitch Offset (degrees):</label>
+                <input type="number" step="any" id="pitch_offset" name="pitch_offset" value="0.0">
+            </div>
+            <div>
+                <label for="yaw_offset">Yaw Offset (degrees):</label>
+                <input type="number" step="any" id="yaw_offset" name="yaw_offset" value="0.0">
+            </div>
+            <button type="submit">Add Camera</button>
+        </form>
+
+        <h2>Configured Cameras</h2>
+        {% if cameras %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Device Path</th>
+                        <th>Type</th>
+                        <th>Resolution</th>
+                        <th>Pixel Format</th>
+                        <th>Stereo</th>
+                        <th>Service Name</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for camera in cameras %}
+                    <tr>
+                        <td>{{ camera.name }}</td>
+                        <td>{{ camera.device_path }}</td>
+                        <td>{{ camera.type }}</td>
+                        <td>{{ camera.width }}x{{ camera.height }}</td>
+                        <td>{{ camera.pixel_format }}</td>
+                        <td>{{ 'Yes' if camera.stereo else 'No' }}</td>
+                        <td>{{ camera.service_name if camera.service_name else 'N/A' }}</td>
+                        <td>
+                            <form action="{{ url_for('delete_camera', camera_name=camera.name) }}" method="POST" style="display:inline;">
+                                <button type="submit" class="delete-button" onclick="return confirm('Are you sure you want to delete {{ camera.name }}?');">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No cameras configured yet.</p>
+        {% endif %}
+    </div>
+    <script>
+        function toggleServiceNameField() {
+            var cameraType = document.getElementById('type').value;
+            var serviceNameField = document.getElementById('serviceNameField');
+            if (cameraType === 'stream_interrupt') {
+                serviceNameField.style.display = 'block';
+                document.getElementById('service_name').required = true;
+            } else {
+                serviceNameField.style.display = 'none';
+                document.getElementById('service_name').required = false;
+            }
+        }
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', toggleServiceNameField);
+    </script>
+</body>
+</html>
